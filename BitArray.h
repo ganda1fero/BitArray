@@ -31,20 +31,19 @@ private:
 	public:
 		inline operator uint64_t() const;
 
-		BitArrayRef& operator=(const BitArrayRef& other_ref);
-		BitArrayRef& operator=(const uint64_t& other);
-		BitArrayRef& operator+=(const uint64_t& other);
-		BitArrayRef& operator-=(const uint64_t& other);
-		BitArrayRef& operator*=(const uint64_t& other);
-		BitArrayRef& operator/=(const uint64_t& other);
-		BitArrayRef& operator++();	// previx
-		BitArrayRef& operator--();	// prefix
-		uint64_t operator++(int);	// postfix
-		uint64_t operator--(int);	// postfix
+		inline BitArrayRef& operator=(const uint64_t& other);
+		inline BitArrayRef& operator+=(const uint64_t& other);
+		inline BitArrayRef& operator-=(const uint64_t& other);
+		inline BitArrayRef& operator*=(const uint64_t& other);
+		inline BitArrayRef& operator/=(const uint64_t& other);
+		inline BitArrayRef& operator++();	// previx
+		inline BitArrayRef& operator--();	// prefix
+		inline uint64_t operator++(int);	// postfix
+		inline uint64_t operator--(int);	// postfix
 	};
 public:
 	inline BitArray();
-	inline BitArray(std::initializer_list<uint64_t> init_list);
+	inline BitArray(const std::initializer_list<uint64_t>& init_list);
 	inline ~BitArray();
 
 	inline size_t size() const;
@@ -324,6 +323,86 @@ inline BitArray<Bits>::BitArrayRef::operator uint64_t() const {
 	}
 
 	return val & ref.mask_;
+}
+
+template<size_t Bits>
+inline typename BitArray<Bits>::BitArrayRef& BitArray<Bits>::BitArrayRef::operator=(const uint64_t& other) {
+	if (other > ref.mask_) {
+		throw std::overflow_error("Overflow");
+	}
+
+	if constexpr (64 % Bits == 0) {	// only in 1 word
+		*place_ptr &= ~(((uint64_t(1) << Bits) - 1)
+			<< (64 - bit_index - Bits));	// delete old value
+		*place_ptr |= other << (64 - bit_index - Bits);	// set new value
+	}
+	else {	// can be in 2 words
+		if (bit_index + Bits <= 64) {	// in 1 word
+			*place_ptr &= ~(((uint64_t(1) << Bits) - 1)
+				<< (64 - bit_index - Bits));	// delete old value
+			*place_ptr |= other << (64 - bit_index - Bits);	// set new value
+		}
+		else {	// in 2 words
+			const int first_len = 64 - bit_index;
+			const int second_len = Bits - first_len;
+			*place_ptr &= ~((uint64_t(1) << first_len) - 1);	// del first part
+			*place_ptr |= other >> second_len;	// set first part value
+			*(place_ptr + 1) &= ~(((uint64_t(1) << second_len) - 1) << (64 - second_len)); // del second value
+			*(place_ptr + 1) |= other << (64 - second_len);
+		}
+	}
+
+	return *this;
+}
+
+template<size_t Bits>
+inline typename BitArray<Bits>::BitArrayRef& BitArray<Bits>::BitArrayRef::operator+=(const uint64_t& other) {
+	*this = static_cast<uint64_t>(*this) + other;
+	return *this;
+}
+
+template<size_t Bits>
+inline typename BitArray<Bits>::BitArrayRef& BitArray<Bits>::BitArrayRef::operator-=(const uint64_t& other) {
+	*this = static_cast<uint64_t>(*this) - other;
+	return *this;
+}
+
+template<size_t Bits>
+inline typename BitArray<Bits>::BitArrayRef& BitArray<Bits>::BitArrayRef::operator*=(const uint64_t& other) {
+	*this = static_cast<uint64_t>(*this) * other;
+	return *this;
+}
+
+template<size_t Bits>
+inline typename BitArray<Bits>::BitArrayRef& BitArray<Bits>::BitArrayRef::operator/=(const uint64_t& other) {
+	*this = static_cast<uint64_t>(*this) / other;
+	return *this;
+}
+
+template<size_t Bits>
+inline typename BitArray<Bits>::BitArrayRef& BitArray<Bits>::BitArrayRef::operator++() {
+	*this = static_cast<uint64_t>(*this) + 1;
+	return *this;
+}
+
+template<size_t Bits>
+inline typename BitArray<Bits>::BitArrayRef& BitArray<Bits>::BitArrayRef::operator--() {
+	*this = static_cast<uint64_t>(*this) - 1;
+	return *this;
+}
+
+template<size_t Bits>
+inline uint64_t BitArray<Bits>::BitArrayRef::operator++(int) {
+	uint64_t val = static_cast<uint64_t>(*this);
+	*this = static_cast<uint64_t>(*this) + 1;
+	return val;
+}
+
+template<size_t Bits>
+inline uint64_t BitArray<Bits>::BitArrayRef::operator--(int) {
+	uint64_t val = static_cast<uint64_t>(*this);
+	*this = static_cast<uint64_t>(*this) - 1;
+	return val;
 }
 
 #endif
