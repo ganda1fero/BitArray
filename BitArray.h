@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <exception>
 #include <string>
+#include <assert.h>
 
 #include <iostream>
 #include <iomanip>
@@ -28,6 +29,8 @@ private:
 
 		inline BitArrayRef(BitArray<Bits>* ref_ptr, uint64_t* place_ptr, uint32_t bit_index);
 		inline BitArrayRef(const BitArray<Bits>::BitArrayRef& other);
+		friend class BitArray<Bits>;
+		friend class BitArray<Bits>::iterator;
 	public:
 		inline operator uint64_t() const;
 
@@ -40,8 +43,35 @@ private:
 		inline BitArrayRef& operator--();	// prefix
 		inline uint64_t operator++(int);	// postfix
 		inline uint64_t operator--(int);	// postfix
+		inline bool operator==(const BitArray<Bits>::BitArrayRef& other_ref) const;
+		inline bool operator!=(const BitArray<Bits>::BitArrayRef& other_ref) const;
 	};
 public:
+	class iterator {
+	private:
+		BitArrayRef bit_ref;
+		iterator(BitArray<Bits>* ref_ptr, uint64_t* place_ptr, uint32_t bit_index);
+		friend class BitArray<Bits>;
+	public:
+		iterator();
+		iterator(const BitArray<Bits>::iterator& other_it);
+
+		inline BitArrayRef& operator*();
+		inline iterator& operator++();	// prefix
+		inline iterator& operator--();	// prefix
+		inline iterator& operator+=(const uint64_t& val);
+		inline iterator& operator-=(const uint64_t& val);
+		inline iterator& operator=(const BitArray<Bits>::iterator& other);
+		inline iterator operator+(size_t value) const;
+		inline iterator operator-(size_t value) const;
+		inline bool operator==(const BitArray<Bits>::iterator& other) const;
+		inline bool operator!=(const BitArray<Bits>::iterator& other) const;
+		inline bool operator<(const BitArray<Bits>::iterator& other) const;
+		inline bool operator>(const BitArray<Bits>::iterator& other) const;
+		inline bool operator<=(const BitArray<Bits>::iterator& other) const;
+		inline bool operator>=(const BitArray<Bits>::iterator& other) const;
+	};
+
 	inline BitArray();
 	inline BitArray(const std::initializer_list<uint64_t>& init_list);
 	inline ~BitArray();
@@ -50,42 +80,27 @@ public:
 	inline size_t capacity() const;
 	inline bool empty() const;
 
-	inline BitArrayRef front();
-	inline BitArrayRef back();
+	inline BitArray<Bits>::BitArrayRef front();
+	inline BitArray<Bits>::BitArrayRef back();
 
-	inline typename BitArray<Bits>::iterator begin() const;
-	inline typename BitArray<Bits>::iterator end() const;
+	inline BitArray<Bits>::iterator begin();
+	inline BitArray<Bits>::iterator end();
 	
 	inline void resize(size_t new_size);
 	inline void reserve(size_t new_capacity);
 	inline void clear();
 
 	inline void pop_back();
-	inline void push_back(const uint64_t val);	//#
+	inline void push_back(const uint64_t val);
 
-	void erase(size_t begin_index, size_t end_index);
+	void erase(BitArray<Bits>::iterator beg_it, BitArray<Bits>::iterator end_it);
 
-	void insert(size_t index, const uint64_t val);
+	void insert(BitArray<Bits>::iterator it, const uint64_t& val);
+	void insert(BitArray<Bits>::iterator it, const uint64_t& val, const size_t count);
 
 	inline BitArrayRef operator[](size_t index);
 	inline BitArray& operator=(const BitArray& other);
 	inline BitArray& operator=(std::initializer_list<uint64_t>& init_list);
-
-	class iterator {
-	private:
-		BitArrayRef bit_ref;
-		iterator(BitArray<Bits>* ref_ptr, uint64_t* place_ptr, uint32_t bit_index);
-	public:
-		iterator();
-		iterator(const BitArray<Bits>::iterator& other_it);
-
-		inline BitArrayRef& operator*();
-		inline iterator& operator++();	// prefix
-		inline iterator& operator--();	// prefix
-		inline iterator& operator=(const iterator& other);
-		inline bool operator==(const iterator& other);
-		inline bool operator!=(const iterator& other);
-	};
 };
 
 // implementation
@@ -156,6 +171,30 @@ inline typename BitArray<Bits>::BitArrayRef BitArray<Bits>::back() {
 }
 
 template<size_t Bits>
+inline typename BitArray<Bits>::iterator BitArray<Bits>::begin() {
+	BitArray<Bits>::iterator it(this, nullptr, 0);	// like empty
+	
+	if (size_) {	// not empty
+		it.bit_ref.place_ptr = memory_;
+		// bit_index still 0
+	}
+
+	return it;
+}
+
+template<size_t Bits>
+inline typename BitArray<Bits>::iterator BitArray<Bits>::end() {
+	BitArray<Bits>::iterator it(this, nullptr, 0);	// like_empty
+
+	if (size_) {	// not empty
+		it.bit_ref.place_ptr = memory_ + (size_ * Bits / 64);
+		it.bit_ref.bit_index = (size_ * Bits) % 64;	// +1 (end)
+	}
+
+	return it;
+}
+
+template<size_t Bits>
 inline void BitArray<Bits>::resize(size_t new_size) {
 	const size_t words_count = (size_ * Bits + 63) / 64;
 	const size_t new_words_count = (new_size * Bits + 63) / 64;
@@ -209,7 +248,7 @@ void BitArray<Bits>::reserve(size_t new_capacity) {
 
 template<size_t Bits>
 inline void BitArray<Bits>::clear() {
-	if (memory_ == nullptr) {
+	if (memory_ != nullptr) {
 		delete[] memory_;
 	}
 	size_ = capacity_ = 0;
@@ -225,19 +264,19 @@ inline void BitArray<Bits>::pop_back() {
 
 	if constexpr (64 % Bits == 0) {	// only in 1 word
 		if (next_bits % 64 == 0) {	// stats in new word
-			memory_[next_bits % 64] = 0;
+			memory_[next_bits / 64] = 0;
 		}
 		else {
-			memory_[next_bits % 64] &= ~((uint64_t(1) << (64 - next_bits % 64)) - 1);
+			memory_[next_bits / 64] &= ~((uint64_t(1) << (64 - next_bits % 64)) - 1);
 		}
 	}
 	else {	// can be in 2 words
 		if (next_bits % 64 + Bits > 64) {	// in 2 words
-			memory_[next_bits % 64 + 1] = 0;
-			memory_[next_bits % 64] &= ~((uint64_t(1) << (64 - next_bits % 64)) - 1);
+			memory_[next_bits / 64 + 1] = 0;
+			memory_[next_bits / 64] &= ~((uint64_t(1) << (64 - next_bits % 64)) - 1);
 		}
 		else {	// in 1 word
-			memory_[next_bits % 64] &= ~((uint64_t(1) << (64 - next_bits % 64)) - 1);
+			memory_[next_bits / 64] &= ~((uint64_t(1) << (64 - next_bits % 64)) - 1);
 		}
 	}
 }
@@ -267,8 +306,8 @@ inline void BitArray<Bits>::push_back(const uint64_t val) {
 		}
 		else {	// in 2 words
 			const int second_len = Bits - 64 + bits_index % 64;
-			memory_[bits_index / 64 - 1] |= val >> (second_len);
-			memory_[bits_index / 64] |= val << (64 - second_len);
+			memory_[bits_index / 64] |= val >> (second_len);
+			memory_[bits_index / 64 + 1] |= val << (64 - second_len);
 		}
 	}
 
@@ -414,6 +453,18 @@ inline uint64_t BitArray<Bits>::BitArrayRef::operator--(int) {
 	return val;
 }
 
+template<size_t Bits>
+inline bool BitArray<Bits>::BitArrayRef::operator==(const BitArray<Bits>::BitArrayRef& other_ref) const {
+	return ref_ptr == other_ref.ref_ptr
+		&& place_ptr == other_ref.place_ptr
+		&& bit_index == other_ref.bit_index;
+}
+
+template<size_t Bits>
+inline bool BitArray<Bits>::BitArrayRef::operator!=(const BitArray<Bits>::BitArrayRef& other_ref) const {
+	return !(*this == other_ref);
+}
+
 // iterator
 template<size_t Bits>
 BitArray<Bits>::iterator::iterator(BitArray<Bits>* ref_ptr, uint64_t* place_ptr, uint32_t bit_index) : bit_ref(BitArray<Bits>::BitArrayRef(ref_ptr, place_ptr, bit_index)) {}
@@ -423,5 +474,105 @@ BitArray<Bits>::iterator::iterator() : bit_ref(BitArray<Bits>::BitArrayRef(nullp
 
 template<size_t Bits>
 BitArray<Bits>::iterator::iterator(const BitArray<Bits>::iterator& other_it) : bit_ref(other_it.bit_ref) {}
+
+template<size_t Bits>
+inline typename BitArray<Bits>::BitArrayRef& BitArray<Bits>::iterator::operator*() {
+	if (*this >= bit_ref.ref_ptr->end()) {
+		throw std::out_of_range("Out of range");
+	}
+
+	return bit_ref;
+}
+
+template<size_t Bits>
+inline typename BitArray<Bits>::iterator& BitArray<Bits>::iterator::operator++() {
+	bit_ref.bit_index += Bits;
+	
+	if (bit_ref.bit_index >= 64) {
+		bit_ref.place_ptr += 1;
+		bit_ref.bit_index -= 64;
+	}
+
+	return *this;
+}
+
+template<size_t Bits>
+inline typename BitArray<Bits>::iterator& BitArray<Bits>::iterator::operator--() {
+	if (bit_ref.bit_index < Bits) {
+		bit_ref.place_ptr -= 1;
+		bit_ref.bit_index = 64 - (Bits - bit_ref.bit_index);
+	}
+
+	return *this;
+}
+
+template<size_t Bits>
+inline typename BitArray<Bits>::iterator& BitArray<Bits>::iterator::operator+=(const uint64_t& val) {
+	bit_ref.bit_index += val * Bits;
+
+	if (bit_ref.bit_index >= 64) {
+		bit_ref.place_ptr += bit_ref.bit_index / 64;
+		bit_ref.bit_index = bit_ref.bit_index % 64;
+	}
+
+	return *this;
+}
+
+template<size_t Bits>
+inline typename BitArray<Bits>::iterator& BitArray<Bits>::iterator::operator-=(const uint64_t& val) {
+	const size_t bit_count = val * Bits;
+	if (bit_ref.bit_index < bit_count) {
+		bit_ref.place_ptr -= (bit_count - bit_ref.bit_index) / 64;
+		bit_ref.bit_index = 64 - (bit_count - bit_ref.bit_index) % 64;
+	}
+
+	return *this;
+}
+
+template<size_t Bits>
+inline typename BitArray<Bits>::iterator& BitArray<Bits>::iterator::operator=(const BitArray<Bits>::iterator& other_it) {
+	bit_ref = other_it.bit_ref;
+
+	return *this;
+}
+
+template<size_t Bits>
+inline typename BitArray<Bits>::iterator BitArray<Bits>::iterator::operator+(size_t value) const {
+	return BitArray<Bits>::iterator(bit_ref.ref_ptr, bit_ref.place_ptr + ((bit_ref.bit_index + value * Bits) / 64), (bit_ref.bit_index + value * Bits) % 64);
+}
+
+template<size_t Bits>
+inline bool BitArray<Bits>::iterator::operator==(const BitArray<Bits>::iterator& other_it) const {
+	return bit_ref == other_it.bit_ref;
+}
+
+template<size_t Bits>
+inline bool BitArray<Bits>::iterator::operator!=(const BitArray<Bits>::iterator& other_it) const {
+	return bit_ref != other_it.bit_ref;
+}
+
+template<size_t Bits>
+inline bool BitArray<Bits>::iterator::operator<(const BitArray<Bits>::iterator& other_it) const {
+	assert(bit_ref.ref_ptr == other_it.bit_ref.ref_ptr);
+
+	return bit_ref.place_ptr < other_it.bit_ref.place_ptr
+		|| (bit_ref.place_ptr == other_it.bit_ref.place_ptr
+			&& bit_ref.bit_index < other_it.bit_ref.bit_index);
+}
+
+template<size_t Bits>
+inline bool BitArray<Bits>::iterator::operator>(const BitArray<Bits>::iterator& other_it) const {
+	return other_it < *this;
+}
+
+template<size_t Bits>
+inline bool BitArray<Bits>::iterator::operator<=(const BitArray<Bits>::iterator& other_it) const {
+	return !(other_it < *this);
+}
+
+template<size_t Bits>
+inline bool BitArray<Bits>::iterator::operator>=(const BitArray<Bits>::iterator& other_it) const {
+	return !(*this < other_it);
+}
 
 #endif
