@@ -24,10 +24,10 @@ private:
 	private:
 		uint64_t* place_ptr;
 		uint32_t bit_index;
-		BitArray<Bits>& ref;
+		BitArray<Bits>* ref_ptr;
 
-		inline BitArrayRef(BitArray<Bits>& ref, uint64_t* place_ptr, uint32_t bit_index);
-		friend class BitArray;
+		inline BitArrayRef(BitArray<Bits>* ref_ptr, uint64_t* place_ptr, uint32_t bit_index);
+		inline BitArrayRef(const BitArray<Bits>::BitArrayRef& other);
 	public:
 		inline operator uint64_t() const;
 
@@ -53,8 +53,8 @@ public:
 	inline BitArrayRef front();
 	inline BitArrayRef back();
 
-	inline size_t begin() const;
-	inline size_t end() const;
+	inline typename BitArray<Bits>::iterator begin() const;
+	inline typename BitArray<Bits>::iterator end() const;
 	
 	inline void resize(size_t new_size);
 	inline void reserve(size_t new_capacity);
@@ -70,6 +70,22 @@ public:
 	inline BitArrayRef operator[](size_t index);
 	inline BitArray& operator=(const BitArray& other);
 	inline BitArray& operator=(std::initializer_list<uint64_t>& init_list);
+
+	class iterator {
+	private:
+		BitArrayRef bit_ref;
+		iterator(BitArray<Bits>* ref_ptr, uint64_t* place_ptr, uint32_t bit_index);
+	public:
+		iterator();
+		iterator(const BitArray<Bits>::iterator& other_it);
+
+		inline BitArrayRef& operator*();
+		inline iterator& operator++();	// prefix
+		inline iterator& operator--();	// prefix
+		inline iterator& operator=(const iterator& other);
+		inline bool operator==(const iterator& other);
+		inline bool operator!=(const iterator& other);
+	};
 };
 
 // implementation
@@ -127,7 +143,7 @@ inline typename BitArray<Bits>::BitArrayRef BitArray<Bits>::front() {
 		throw std::out_of_range("Out of range. BitArray is empty");
 	}
 
-	return BitArray<Bits>::BitArrayRef(*this, &memory_[0], 0);
+	return BitArray<Bits>::BitArrayRef(this, &memory_[0], 0);
 }
 
 template<size_t Bits>
@@ -136,17 +152,7 @@ inline typename BitArray<Bits>::BitArrayRef BitArray<Bits>::back() {
 		throw std::out_of_range("Out of range. BitArray is empty");
 	}
 
-	return BitArray<Bits>::BitArrayRef(*this, &memory_[(size_ - 1) * Bits / 64], ((size_ - 1) * Bits) % 64);
-}
-
-template<size_t Bits>
-inline size_t BitArray<Bits>::begin() const {
-	return 0;
-}
-
-template<size_t Bits>
-inline size_t BitArray<Bits>::end() const {
-	return size_;
+	return BitArray<Bits>::BitArrayRef(this, &memory_[(size_ - 1) * Bits / 64], ((size_ - 1) * Bits) % 64);
 }
 
 template<size_t Bits>
@@ -275,7 +281,7 @@ inline typename BitArray<Bits>::BitArrayRef BitArray<Bits>::operator[](size_t in
 		throw std::out_of_range("Index " + std::to_string(index) + " out of range");
 	}
 
-	return BitArray<Bits>::BitArrayRef(*this, &memory_[index * Bits / 64], (index * Bits) % 64);
+	return BitArray<Bits>::BitArrayRef(this, &memory_[index * Bits / 64], (index * Bits) % 64);
 }
 
 template<size_t Bits>
@@ -300,10 +306,13 @@ inline BitArray<Bits>& BitArray<Bits>::operator=(const BitArray<Bits>& other) {
 }
 
 // BitArrayRef
-template <size_t Bits>
-inline BitArray<Bits>::BitArrayRef::BitArrayRef(BitArray<Bits>& ref, uint64_t* place_ptr, uint32_t bit_index) : ref(ref), place_ptr(place_ptr), bit_index(bit_index) {}
+template<size_t Bits>
+inline BitArray<Bits>::BitArrayRef::BitArrayRef(BitArray<Bits>* ref_ptr, uint64_t* place_ptr, uint32_t bit_index) : ref_ptr(ref_ptr), place_ptr(place_ptr), bit_index(bit_index) {}
 
-template <size_t Bits>
+template<size_t Bits>
+BitArray<Bits>::BitArrayRef::BitArrayRef(const BitArray<Bits>::BitArrayRef& other) : place_ptr(other.place_ptr), bit_index(other.bit_index), ref_ptr(other.ref_ptr) {}
+
+template<size_t Bits>
 inline BitArray<Bits>::BitArrayRef::operator uint64_t() const {
 	uint64_t val;
 	if constexpr (64 % Bits == 0) {	// elem only in 1 word
@@ -322,12 +331,12 @@ inline BitArray<Bits>::BitArrayRef::operator uint64_t() const {
 		}
 	}
 
-	return val & ref.mask_;
+	return val & ref_ptr->mask_;
 }
 
 template<size_t Bits>
 inline typename BitArray<Bits>::BitArrayRef& BitArray<Bits>::BitArrayRef::operator=(const uint64_t& other) {
-	if (other > ref.mask_) {
+	if (other > ref_ptr->mask_) {
 		throw std::overflow_error("Overflow");
 	}
 
@@ -404,5 +413,15 @@ inline uint64_t BitArray<Bits>::BitArrayRef::operator--(int) {
 	*this = static_cast<uint64_t>(*this) - 1;
 	return val;
 }
+
+// iterator
+template<size_t Bits>
+BitArray<Bits>::iterator::iterator(BitArray<Bits>* ref_ptr, uint64_t* place_ptr, uint32_t bit_index) : bit_ref(BitArray<Bits>::BitArrayRef(ref_ptr, place_ptr, bit_index)) {}
+
+template<size_t Bits>
+BitArray<Bits>::iterator::iterator() : bit_ref(BitArray<Bits>::BitArrayRef(nullptr, nullptr, 0)) {}
+
+template<size_t Bits>
+BitArray<Bits>::iterator::iterator(const BitArray<Bits>::iterator& other_it) : bit_ref(other_it.bit_ref) {}
 
 #endif
