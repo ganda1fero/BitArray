@@ -67,6 +67,7 @@ public:
 		inline iterator operator+(size_t value) const;
 		inline iterator operator-(size_t value) const;
 		inline iterator& operator=(const BitArray<Bits>::iterator& other);
+		inline size_t operator-(BitArray<Bits>::iterator other_it);
 		inline bool operator==(const BitArray<Bits>::iterator& other) const;
 		inline bool operator!=(const BitArray<Bits>::iterator& other) const;
 		inline bool operator<(const BitArray<Bits>::iterator& other) const;
@@ -97,7 +98,7 @@ public:
 	inline void pop_back();
 	void push_back(const uint64_t val);
 
-	void erase(BitArray<Bits>::iterator beg_it, BitArray<Bits>::iterator end_it);
+	void erase(const BitArray<Bits>::iterator& beg_it, const BitArray<Bits>::iterator& end_it);
 
 	void insert(BitArray<Bits>::iterator it, const uint64_t& val);
 	void insert(BitArray<Bits>::iterator it, const uint64_t& val, const size_t count);
@@ -676,6 +677,14 @@ inline typename BitArray<Bits>::iterator& BitArray<Bits>::iterator::operator=(co
 	bit_ref = other_it.bit_ref;
 
 	return *this;
+}
+
+template<size_t Bits>
+inline size_t BitArray<Bits>::iterator::operator-(BitArray<Bits>::iterator other_it) {
+	//static_assert(this->bit_ref.ref_ptr == other_it.bit_ref.ref_ptr, "iterators must be from the same BitArray");
+	
+	return ((this->bit_ref.place_ptr - other_it.bit_ref.place_ptr) * 64 
+		+ (this->bit_ref.bit_index - other_it.bit_ref.bit_index)) / Bits;
 }
 
 template<size_t Bits>
