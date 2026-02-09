@@ -38,6 +38,7 @@ private:
 		inline operator uint64_t() const;
 
 		inline BitArrayRef& operator=(const uint64_t& other);
+		BitArrayRef& operator=(const BitArray<Bits>::BitArrayRef& other_ref) = delete;
 		inline BitArrayRef& operator+=(const uint64_t& other);
 		inline BitArrayRef& operator-=(const uint64_t& other);
 		inline BitArrayRef& operator*=(const uint64_t& other);
@@ -416,6 +417,49 @@ void BitArray<Bits>::push_back(const uint64_t val) {
 }
 
 template<size_t Bits>
+void BitArray<Bits>::erase(const BitArray<Bits>::iterator& beg_it, const BitArray<Bits>::iterator& end_it) {
+	if (beg_it == end_it) {
+		return;
+	}	// if beg_it > end_it => gonna be UB
+
+	BitArray<Bits>::iterator left_it = beg_it;
+	BitArray<Bits>::iterator right_it = end_it;
+	const BitArray<Bits>::iterator c_end = end();
+	
+	// shift values
+	while (right_it != c_end) {	// change values (shift to new pos)
+		*left_it = static_cast<uint64_t>(*right_it);
+
+		++left_it;
+		++right_it;
+	}
+
+	// del (=NULL) extreme values in place_ptr (left_it)
+	if ((*left_it).bit_index == 0) {	// del all the word
+		*((*left_it).place_ptr) = 0;
+	}
+	else {	// del only left_it+ bits (from place_ptr)
+		*((*left_it).place_ptr) &= ~((uint64_t(1) << (64 - (*left_it).bit_index)) - 1);
+
+		if constexpr (64 % Bits != 0) {	// can be in 2 words
+			if ((*left_it).bit_index + Bits > 64) {	// in 2 words
+				// already deleted left part => del(=NULL) next place_ptr
+				*((*left_it).place_ptr + 1) = 0;
+			}
+		}
+	}
+	// del (=NULL) extreme words (right to left_it->place_ptr)
+	const uint64_t* end_ptr = back().place_ptr + 1;
+	uint64_t* left_ptr = (*left_it).place_ptr + 1;
+	while (left_ptr != end_ptr) {
+		*left_ptr = 0;
+		++left_ptr;
+	}
+
+	size_ -= const_cast<BitArray<Bits>::iterator&>(end_it) - const_cast<BitArray<Bits>::iterator&>(beg_it);
+}
+
+template<size_t Bits>
 inline typename BitArray<Bits>::BitArrayRef BitArray<Bits>::operator[](size_t index) {
 	if (index >= size_) {
 		throw std::out_of_range("Index " + std::to_string(index) + " out of range");
@@ -674,7 +718,9 @@ inline typename BitArray<Bits>::iterator& BitArray<Bits>::iterator::operator-=(c
 
 template<size_t Bits>
 inline typename BitArray<Bits>::iterator& BitArray<Bits>::iterator::operator=(const BitArray<Bits>::iterator& other_it) {
-	bit_ref = other_it.bit_ref;
+	bit_ref.place_ptr = other_it.bit_ref.place_ptr;
+	bit_ref.bit_index = other_it.bit_ref.bit_index;
+	bit_ref.ref_ptr = other_it.bit_ref.ref_ptr;
 
 	return *this;
 }
