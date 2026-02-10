@@ -3,7 +3,6 @@
 
 #include <cstdint>
 #include <exception>
-#include <string>
 #include <vector>
 #include <assert.h>
 #include <type_traits>
