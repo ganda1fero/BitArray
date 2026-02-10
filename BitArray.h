@@ -99,7 +99,7 @@ public:
 	inline void pop_back();
 	void push_back(const uint64_t val);
 
-	void erase(const BitArray<Bits>::iterator& beg_it, const BitArray<Bits>::iterator& end_it);
+	void erase(BitArray<Bits>::iterator beg_it, BitArray<Bits>::iterator end_it);
 
 	void insert(BitArray<Bits>::iterator it, const uint64_t& val);
 	void insert(BitArray<Bits>::iterator it, const uint64_t& val, const size_t count);
@@ -110,6 +110,8 @@ public:
 	template<typename T> BitArray& operator=(const std::vector<T>& vect);
 	template<typename T> BitArray& operator+=(const std::initializer_list<T>& init_list);
 	template<typename T> BitArray& operator+=(const std::vector<T>& vect);
+
+	template<typename T> operator std::vector<T>() const;
 };
 
 // implementation
@@ -120,7 +122,7 @@ inline const uint64_t BitArray<Bits>::get_mask() const {
 	static_assert(Bits >= 1 && Bits <= 63, "Bits must be in [1..63]");
 	uint64_t mask;
 	if constexpr (Bits == 64) {	// if на этапе компиляции
-		throw std::exception("Bits must be in [1...63]");
+		throw std::out_of_range("Bits must be in [1...63]");
 	}
 	else {
 		mask = (uint64_t(1) << Bits) - 1;
@@ -177,7 +179,7 @@ template<typename T_it>
 void BitArray<Bits>::add_from_range(const T_it& beg_it, const T_it& end_it) {
 	if constexpr (std::is_same_v<decltype(beg_it), decltype(this->begin())>) {
 		if (beg_it == this->begin()) {
-			throw std::exception("self copy banned!");
+			throw std::logic_error("BitArray | self copy banned!");
 		}
 	}
 	
@@ -417,7 +419,10 @@ void BitArray<Bits>::push_back(const uint64_t val) {
 }
 
 template<size_t Bits>
-void BitArray<Bits>::erase(const BitArray<Bits>::iterator& beg_it, const BitArray<Bits>::iterator& end_it) {
+void BitArray<Bits>::erase(BitArray<Bits>::iterator beg_it, BitArray<Bits>::iterator end_it) {
+	if (beg_it.bit_ref.ref_ptr != end_it.bit_ref.ref_ptr || beg_it.bit_ref.ref_ptr != this) {
+		throw std::out_of_range("BitArray::iterator | invalid iterator");
+	}
 	if (beg_it == end_it) {
 		return;
 	}	// if beg_it > end_it => gonna be UB
@@ -456,7 +461,90 @@ void BitArray<Bits>::erase(const BitArray<Bits>::iterator& beg_it, const BitArra
 		++left_ptr;
 	}
 
-	size_ -= const_cast<BitArray<Bits>::iterator&>(end_it) - const_cast<BitArray<Bits>::iterator&>(beg_it);
+	size_t diff = end_it - beg_it;
+	size_ -= diff;
+}
+
+template<size_t Bits>
+void BitArray<Bits>::insert(BitArray<Bits>::iterator it, const uint64_t& val) {
+	if (it.bit_ref.ref_ptr != this || it > end()) {
+		throw std::out_of_range("BitArray::iterator | invalid iterator");
+	}
+
+	if (capacity_ == size_) {	// add memory if no free space
+		const uint64_t word_count = (size_ * Bits + 63) / 64;
+		const uint64_t new_word_count = word_count + 1;
+		uint64_t* new_memory = new uint64_t[new_word_count]{ 0 };
+		for (size_t i{}; i < word_count; ++i) {
+			new_memory[i] = memory_[i];
+		}
+		
+		it.bit_ref.place_ptr = new_memory
+			+ (it.bit_ref.place_ptr - it.bit_ref.ref_ptr->memory_);	// copy ptr owset
+		if (memory_ != nullptr) {
+			delete[] memory_;
+		}
+		memory_ = new_memory;
+		capacity_ = new_word_count * 64 / Bits;
+	}
+	++size_;
+
+	// shift elems
+	BitArray<Bits>::iterator right_it = end() - 1;
+	BitArray<Bits>::iterator left_it = right_it - 1;
+	while (right_it != it) {
+		*right_it = static_cast<uint64_t>(*left_it);
+
+		--right_it;
+		--left_it;
+	}
+
+	*right_it = val;	// right_it == it (watch function parameters)
+}
+
+template<size_t Bits>
+void BitArray<Bits>::insert(BitArray<Bits>::iterator it, const uint64_t& val, const size_t count) {
+	if (it.bit_ref.ref_ptr != this || it > end()) {
+		throw std::out_of_range("BitArray::iterator | invalid iterator");
+	}
+	if (count == 0) {
+		return;
+	}
+
+	if (capacity_ < size_ + count) {	// add memory if no free space
+		const uint64_t word_count = (size_ * Bits + 63) / 64;
+		const uint64_t new_word_count = ((size_ + count) * Bits + 63) / 64;
+		uint64_t* new_memory = new uint64_t[new_word_count]{ 0 };
+		for (size_t i{}; i < word_count; ++i) {
+			new_memory[i] = memory_[i];
+		}
+
+		it.bit_ref.place_ptr = new_memory
+			+ (it.bit_ref.place_ptr - it.bit_ref.ref_ptr->memory_);	// copy ptr owset
+		if (memory_ != nullptr) {
+			delete[] memory_;
+		}
+		memory_ = new_memory;
+		capacity_ = new_word_count * 64 / Bits;
+	}
+	size_ += count;
+
+	// shift elems
+	BitArray<Bits>::iterator right_it = end() - 1;
+	BitArray<Bits>::iterator left_it = right_it - count;
+	while (left_it >= it) {
+		*right_it = static_cast<uint64_t>(*left_it);
+
+		--right_it;
+		--left_it;
+	}
+
+	++left_it;
+	++right_it;
+	while (left_it != right_it) {	// insert values
+		*left_it = val;
+		++left_it;
+	}
 }
 
 template<size_t Bits>
@@ -521,6 +609,25 @@ BitArray<Bits>& BitArray<Bits>::operator+=(const std::vector<T>& vect) {
 	add_from_range(vect.begin(), vect.end());
 
 	return *this;
+}
+
+template<size_t Bits>
+template<typename T>
+BitArray<Bits>::operator std::vector<T>() const {
+	std::vector<T> vect;
+	vect.resize(size_);
+	auto vect_it = vect.begin();
+	
+	BitArray<Bits>::iterator bit_it = const_cast<BitArray<Bits>*>(this)->begin();
+	BitArray<Bits>::iterator bit_it_end = const_cast<BitArray<Bits>*>(this)->end();
+	
+	while (bit_it != bit_it_end) {
+		*vect_it = static_cast<uint64_t>(*bit_it);
+		++bit_it;
+		++vect_it;
+	}
+
+	return vect;
 }
 
 // BitArrayRef
