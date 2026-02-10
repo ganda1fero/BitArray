@@ -9,6 +9,8 @@
 
 template<size_t Bits>
 class BitArray {
+public:
+	class iterator;
 private:
 	const uint64_t mask_ = get_mask();
 	uint64_t* memory_;
