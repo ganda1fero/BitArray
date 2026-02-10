@@ -3,13 +3,14 @@
 
 #include <cstdint>
 #include <exception>
-#include <string>
 #include <vector>
 #include <assert.h>
 #include <type_traits>
 
 template<size_t Bits>
 class BitArray {
+public:
+	class iterator;
 private:
 	const uint64_t mask_ = get_mask();
 	uint64_t* memory_;
