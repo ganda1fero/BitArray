@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <exception>
 #include <vector>
+#include <string>
 #include <assert.h>
 #include <type_traits>
 
